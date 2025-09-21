@@ -15,8 +15,6 @@ from datetime import datetime, timedelta
 #import win32com.client as client
 import logging
 
-from Read_OracleDB_Windows import get_cursor, read_daily_data, read_breakpoint_data
-
 
 
 # Create a file to log the hydrograph plotting process.
@@ -291,6 +289,7 @@ def main():
         
 if __name__ == "__main__":
     main()
+
 
 
 
