@@ -241,8 +241,8 @@ def main():
                     df_output = pd.DataFrame(results)
         
                     # Save file name with datetime of selected structure
-                    datetime = datetime.now()
-                    formatted_datetime = datetime.strftime("%d-%m-%Y-%H%M")
+                    datetime_now = datetime.now()
+                    formatted_datetime = datetime_now.strftime("%d-%m-%Y-%H%M")
                     output_file = f"{selected_structure}_HW_TW_MAGO_{formatted_datetime}.csv"
         
                     # Download button
@@ -290,6 +290,7 @@ def main():
         
 if __name__ == "__main__":
     main()
+
 
 
 
