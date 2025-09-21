@@ -30,57 +30,6 @@ def create_log(logfile):
         filemode='w'  # overwrite each run
     )
 
-def get_date():
-    try:
-
-        dict_month = {
-            '1': "Jan",
-            '2': "Feb",
-            '3': "Mar",
-            '4': "Apr",
-            '5': "May",
-            '6': "Jun",
-            '7': "Jul",
-            '8':"Aug",
-            '9': "Sep",
-            '10': "Oct",
-            '11': "Nov",
-            '12': "Dec"}
-        start = datetime.today()
-        day = start.day
-        month = start.month
-        year = start.year
-        start_datetime = f"{day:02d}-{dict_month[str(month)]}-{year}"
-        
-        end = datetime.today() + timedelta(days = 1)
-        day = end.day
-        month = end.month
-        year = end.year
-        end_datetime = f"{day:02d}-{dict_month[str(month)]}-{year}"
-        
-        return start_datetime, end_datetime
-    
-    except Exception as e:
-        logging.error("Get header date error: {}".format(e))
-
-def get_last_valid(df, max_back=10):
-    """
-    Return last valid (datetime, value) pair from df,
-    searching backwards up to max_back rows.
-    """
-    if df.empty:
-        return None, None
-    
-    # Look backwards up to max_back rows
-    for i in range(1, max_back+1):
-        if len(df) >= i:
-            row = df.iloc[-i]
-            val = row.values[0]
-            if pd.notna(val):  # found valid value
-                return row.name, val
-    return None, None  # if no valid value found
-
-
 
 def main():
     try:
@@ -290,6 +239,7 @@ def main():
         
 if __name__ == "__main__":
     main()
+
 
 
 
