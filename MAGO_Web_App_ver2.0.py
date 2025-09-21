@@ -136,8 +136,8 @@ def main():
         #hw = st.sidebar.number_input("Headwater Level (HW)", value=current_hw, step=0.1)
         #tw = st.sidebar.number_input("Tailwater Level (TW)", value=current_tw, step=0.1)
 
-        hw = st.sidebar.number_input("Headwater Level (HW)", min_value=float(filtered_data["HW"].min()), max_value=float(filtered_data["HW"].max()), step=0.1)
-        tw = st.sidebar.number_input("Tailwater Level (TW)", min_value=float(filtered_data["TW"].min()), max_value=float(filtered_data["TW"].max()), step=0.1)
+        hw = st.sidebar.number_input("Headwater Level (HW)", min_value=float(filtered_data["HW_NAVD88"].min()), max_value=float(filtered_data["HW_NAVD88"].max()), step=0.1)
+        tw = st.sidebar.number_input("Tailwater Level (TW)", min_value=float(filtered_data["TW_NAVD88"].min()), max_value=float(filtered_data["TW_NAVD88"].max()), step=0.1)
 
             
         
@@ -289,6 +289,7 @@ def main():
         
 if __name__ == "__main__":
     main()
+
 
 
 
