@@ -105,80 +105,6 @@ def main():
         logging.info(df_sta.to_string()) #print entire df
         logging.info(len(df_sta))
         
-        # Define start and end date
-        start_datetime, end_datetime = get_date()
-        logging.info(f"start date:{start_datetime}, end date:{end_datetime}")
-        
-        # Extract data from dbhydro
-        results = []
-        for idx, row in df_sta.iterrows():
-            structure = row["Structure"]
-        
-            # Get Headwater data
-            HW = read_breakpoint_data(
-                station_id=row["Headwater"],
-                start_time=start_datetime,
-                end_time=end_datetime,
-                header_name=row["Headwater"],
-                datum="NAVD88"
-            )
-        
-            # Get Tailwater data
-            TW = read_breakpoint_data(
-                station_id=row["Tailwater"],
-                start_time=start_datetime,
-                end_time=end_datetime,
-                header_name=row["Tailwater"],
-                datum="NAVD88"
-            )
-        
-            datetime_val, hw_val = get_last_valid(HW, max_back=10)
-            _, tw_val = get_last_valid(TW, max_back=10)
-        
-            if datetime_val is None:
-                logging.info(f"⚠️ No valid data for {structure}")
-                continue
-        
-            # Build row dictionary
-            row_result = {
-                "Structure": structure,
-                "Date and Time": datetime_val,
-                "Headwater (ft-NAVD88)": round(hw_val,2),
-                "Tailwater (ft-NAVD88)": round(tw_val,2),
-                "Gates": row["Gate_No"]
-            }
-        
-            # Add gates dynamically
-            for i in range(row["Gate_No"]):
-                gate_id = f"Gate{i+1}"
-                gate_opening_ts = read_breakpoint_data(
-                    station_id=row[gate_id],
-                    start_time=start_datetime,
-                    end_time=end_datetime,
-                    header_name=row[gate_id],
-                )
-                _, gate_opening = get_last_valid(gate_opening_ts, max_back=10)
-        
-                if gate_opening is None:
-                    logging.info(f"⚠️ No valid data for {gate_id}")
-                    row_result[gate_id+" (ft)"] = "N/A"
-                else:
-                    row_result[gate_id+" (ft)"] = round(gate_opening,1)
-        
-            # Append final row for structure
-            results.append(row_result)
-
-            # print(results)
-        
-        # Build final dataframe
-        df_bkpt_data = pd.DataFrame(results) # bkpt = breakpoint/instantaneous
-        # print(df_bkpt_data.to_string())
-        logging.info("Printing Breakpoint Data")
-        logging.info(df_bkpt_data.to_string()) # print entire df
-        logging.info(len(df_bkpt_data))
-        # df_bkpt_data = df_bkpt_data.set_index("Structure") # Set structure as index to facilitate following operations
-        
-        
         
         # Reading MAGO curve dataset
         magodataset = os.path.join(workdir, "MAGO.csv")
@@ -193,7 +119,7 @@ def main():
         
         # Sidebar: Structure selection
         st.sidebar.header("Select Structure")
-        structurelist = df_bkpt_data['Structure'].unique()
+        structurelist = df_sta['Structure'].unique()
         print(structurelist)
         selected_structure = st.sidebar.selectbox("Choose a structure:", structurelist)
         
@@ -207,12 +133,13 @@ def main():
         min_go, max_go = y.min(), y.max()
         
         st.sidebar.header("Enter HW & TW Conditions")
-        current_hw = df_bkpt_data.loc[df_bkpt_data["Structure"] == selected_structure, "Headwater (ft-NAVD88)"].iloc[0]
-        current_tw = df_bkpt_data.loc[df_bkpt_data["Structure"] == selected_structure, "Tailwater (ft-NAVD88)"].iloc[0]
 
 
-        hw = st.sidebar.number_input("Headwater Level (HW)", value=current_hw, step=0.1)
-        tw = st.sidebar.number_input("Tailwater Level (TW)", value=current_tw, step=0.1)
+        #hw = st.sidebar.number_input("Headwater Level (HW)", value=current_hw, step=0.1)
+        #tw = st.sidebar.number_input("Tailwater Level (TW)", value=current_tw, step=0.1)
+
+        hw = st.sidebar.number_input("Headwater Level (HW)", min_value=float(filtered_data["HW"].min()), max_value=float(filtered_data["HW"].max()), step=0.1)
+        tw = st.sidebar.number_input("Tailwater Level (TW)", min_value=float(filtered_data["TW"].min()), max_value=float(filtered_data["TW"].max()), step=0.1)
 
             
         
@@ -364,6 +291,7 @@ def main():
         
 if __name__ == "__main__":
     main()
+
 
 
 
