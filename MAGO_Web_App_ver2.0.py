@@ -241,8 +241,9 @@ def main():
                     df_output = pd.DataFrame(results)
         
                     # Save file name with datetime of selected structure
-                    datetime_val = df_bkpt_data.loc[df_bkpt_data["Structure"] == selected_structure, "Date and Time"].iloc[0]
-                    output_file = f"{selected_structure}_HW_TW_MAGO_{datetime_val}.csv"
+                    datetime = datetime.now()
+                    formatted_datetime = datetime.strftime("%d-%m-%Y-%H%M")
+                    output_file = f"{selected_structure}_HW_TW_MAGO_{formatted_datetime}.csv"
         
                     # Download button
                     st.download_button(
@@ -289,6 +290,7 @@ def main():
         
 if __name__ == "__main__":
     main()
+
 
 
 
