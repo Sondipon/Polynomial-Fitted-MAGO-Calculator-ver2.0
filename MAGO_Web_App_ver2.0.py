@@ -1,0 +1,368 @@
+import os
+import sys
+import pandas as pd
+import numpy as np
+import streamlit as st
+import matplotlib.pyplot as plt
+from scipy.interpolate import griddata
+from scipy.spatial import Delaunay
+
+import time as tm
+import subprocess
+from datetime import datetime, timedelta
+
+
+import win32com.client as client
+import logging
+
+from Read_OracleDB_Windows import get_cursor, read_daily_data, read_breakpoint_data
+
+
+
+# Create a file to log the hydrograph plotting process.
+def create_log(logfile):
+    # Remove all existing handlers
+    for handler in logging.root.handlers[:]:
+        logging.root.removeHandler(handler)
+    
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(message)s',
+        filename=logfile,
+        filemode='w'  # overwrite each run
+    )
+
+def get_date():
+    try:
+
+        dict_month = {
+            '1': "Jan",
+            '2': "Feb",
+            '3': "Mar",
+            '4': "Apr",
+            '5': "May",
+            '6': "Jun",
+            '7': "Jul",
+            '8':"Aug",
+            '9': "Sep",
+            '10': "Oct",
+            '11': "Nov",
+            '12': "Dec"}
+        start = datetime.today()
+        day = start.day
+        month = start.month
+        year = start.year
+        start_datetime = f"{day:02d}-{dict_month[str(month)]}-{year}"
+        
+        end = datetime.today() + timedelta(days = 1)
+        day = end.day
+        month = end.month
+        year = end.year
+        end_datetime = f"{day:02d}-{dict_month[str(month)]}-{year}"
+        
+        return start_datetime, end_datetime
+    
+    except Exception as e:
+        logging.error("Get header date error: {}".format(e))
+
+def get_last_valid(df, max_back=10):
+    """
+    Return last valid (datetime, value) pair from df,
+    searching backwards up to max_back rows.
+    """
+    if df.empty:
+        return None, None
+    
+    # Look backwards up to max_back rows
+    for i in range(1, max_back+1):
+        if len(df) >= i:
+            row = df.iloc[-i]
+            val = row.values[0]
+            if pd.notna(val):  # found valid value
+                return row.name, val
+    return None, None  # if no valid value found
+
+
+
+def main():
+    try:
+        # Define work directory
+        # Determine the correct base path for accessing files
+        if getattr(sys, 'frozen', False):
+            workdir = sys._MEIPASS  # PyInstaller temp directory
+        else:
+            workdir = os.path.dirname(os.path.abspath(__file__))
+        # workdir = r"Q:\Tools_Apps\MAGO_Checks\MAGO_Curve_Check_Automation"        
+        
+        # Initiate log file
+        logfile = os.path.join(workdir, "magowebapprun.log")       
+        create_log(logfile)
+        
+        # List of stations for MAGO calculation
+        stationnames = os.path.join(workdir, "structureList.csv")
+        df_sta = pd.read_csv(stationnames)
+        logging.info("List of stations for MAGO calculation")
+        logging.info(df_sta.to_string()) #print entire df
+        logging.info(len(df_sta))
+        
+        # Define start and end date
+        start_datetime, end_datetime = get_date()
+        logging.info(f"start date:{start_datetime}, end date:{end_datetime}")
+        
+        # Extract data from dbhydro
+        results = []
+        for idx, row in df_sta.iterrows():
+            structure = row["Structure"]
+        
+            # Get Headwater data
+            HW = read_breakpoint_data(
+                station_id=row["Headwater"],
+                start_time=start_datetime,
+                end_time=end_datetime,
+                header_name=row["Headwater"],
+                datum="NAVD88"
+            )
+        
+            # Get Tailwater data
+            TW = read_breakpoint_data(
+                station_id=row["Tailwater"],
+                start_time=start_datetime,
+                end_time=end_datetime,
+                header_name=row["Tailwater"],
+                datum="NAVD88"
+            )
+        
+            datetime_val, hw_val = get_last_valid(HW, max_back=10)
+            _, tw_val = get_last_valid(TW, max_back=10)
+        
+            if datetime_val is None:
+                logging.info(f"⚠️ No valid data for {structure}")
+                continue
+        
+            # Build row dictionary
+            row_result = {
+                "Structure": structure,
+                "Date and Time": datetime_val,
+                "Headwater (ft-NAVD88)": round(hw_val,2),
+                "Tailwater (ft-NAVD88)": round(tw_val,2),
+                "Gates": row["Gate_No"]
+            }
+        
+            # Add gates dynamically
+            for i in range(row["Gate_No"]):
+                gate_id = f"Gate{i+1}"
+                gate_opening_ts = read_breakpoint_data(
+                    station_id=row[gate_id],
+                    start_time=start_datetime,
+                    end_time=end_datetime,
+                    header_name=row[gate_id],
+                )
+                _, gate_opening = get_last_valid(gate_opening_ts, max_back=10)
+        
+                if gate_opening is None:
+                    logging.info(f"⚠️ No valid data for {gate_id}")
+                    row_result[gate_id+" (ft)"] = "N/A"
+                else:
+                    row_result[gate_id+" (ft)"] = round(gate_opening,1)
+        
+            # Append final row for structure
+            results.append(row_result)
+
+            # print(results)
+        
+        # Build final dataframe
+        df_bkpt_data = pd.DataFrame(results) # bkpt = breakpoint/instantaneous
+        # print(df_bkpt_data.to_string())
+        logging.info("Printing Breakpoint Data")
+        logging.info(df_bkpt_data.to_string()) # print entire df
+        logging.info(len(df_bkpt_data))
+        # df_bkpt_data = df_bkpt_data.set_index("Structure") # Set structure as index to facilitate following operations
+        
+        
+        
+        # Reading MAGO curve dataset
+        magodataset = os.path.join(workdir, "MAGO.csv")
+        # Check if CSV file exists
+        if not os.path.exists(magodataset):
+            logging.error(f"CSV file not found at: {magodataset}")
+        # Load the dataset
+        df_magodataset = pd.read_csv(magodataset) 
+        
+        logging.info("MAGO dataset")
+        logging.info(df_magodataset)
+        
+        # Sidebar: Structure selection
+        st.sidebar.header("Select Structure")
+        structurelist = df_bkpt_data['Structure'].unique()
+        print(structurelist)
+        selected_structure = st.sidebar.selectbox("Choose a structure:", structurelist)
+        
+        #Filter data for selected structure
+        filtered_data = df_magodataset[df_magodataset['Structure'] == selected_structure]
+        X = filtered_data[['HW_NAVD88', 'TW_NAVD88']].values
+        y = filtered_data['GO_feet'].values
+        if len(y) == 0:
+            logging.warning(f"No MAGO data for {structure}")
+        
+        min_go, max_go = y.min(), y.max()
+        
+        st.sidebar.header("Enter HW & TW Conditions")
+        current_hw = df_bkpt_data.loc[df_bkpt_data["Structure"] == selected_structure, "Headwater (ft-NAVD88)"].iloc[0]
+        current_tw = df_bkpt_data.loc[df_bkpt_data["Structure"] == selected_structure, "Tailwater (ft-NAVD88)"].iloc[0]
+
+
+        hw = st.sidebar.number_input("Headwater Level (HW)", value=current_hw, step=0.1)
+        tw = st.sidebar.number_input("Tailwater Level (TW)", value=current_tw, step=0.1)
+
+            
+        
+        try:
+            # Build convex hull of gridded data
+            hull = Delaunay(X)
+
+            if hull.find_simplex([(hw, tw)]) >= 0:
+                # Inside gridded data → interpolate
+                predicted_mago = griddata(X, y, [(hw, tw)], method='cubic')
+                if np.isnan(predicted_mago[0]):
+                    predicted_mago = griddata(X, y, [(hw, tw)], method='linear')
+
+                # Clamp numeric values inside min/max GO
+                if isinstance(predicted_mago[0], (int, float, np.floating)):
+                    if predicted_mago[0] < min_go:
+                        predicted_mago = np.array([min_go])
+                    elif predicted_mago[0] > max_go:
+                        predicted_mago = np.array([max_go])
+                zone = "Gridded data zone"
+
+            else:
+                # Outside gridded data → assign < MAGO min/No MAGO
+                if hw < X[:,0].min() or tw < X[:,1].min():
+                    predicted_mago = np.array([f"<{min_go}"])
+                    zone = "Left of gridded data"
+                else:
+                    predicted_mago = np.array(["No MAGO"])
+                    zone = "Right of gridded data"
+
+        except Exception as e:
+            logging.error(f"This is an error: {e}")
+            raise
+        
+        st.title("Polynomial-Fitted MAGO Calculator")
+        if isinstance(predicted_mago[0], str):
+            st.subheader(f"Calculated Maximum Allowable Gate Opening (MAGO) for {selected_structure}: {predicted_mago[0]}")
+            # df_predictedmago.loc[idx,'MAGO (ft)'] = predicted_mago[0]
+        else:
+            # df_predictedmago.loc[idx,'MAGO (ft)'] = round(predicted_mago[0], 1) # round for numeric value
+            st.subheader(f"Calculated Maximum Allowable Gate Opening (MAGO) for {selected_structure}: {round(predicted_mago[0], 1)} feet")
+            
+            
+        
+        # Batch Processing Section
+        st.sidebar.header("Batch Processing")
+        uploaded_file = st.sidebar.file_uploader("Upload CSV file with HW_NAVD88 & TW_NAVD88", type=["csv"])
+        
+        if uploaded_file is not None:
+            try:
+                
+                
+                input_data = pd.read_csv(uploaded_file)
+                
+                if {'HW_NAVD88', 'TW_NAVD88'}.issubset(input_data.columns):
+                    
+                    # List to store results
+                    results = []
+        
+                    # Iterate over each row
+                    for idx, row in input_data.iterrows():
+                        hw = row['HW_NAVD88']
+                        tw = row['TW_NAVD88']     
+        
+                        # Build convex hull of gridded data
+                        hull = Delaunay(X)
+    
+                        if hull.find_simplex([(hw, tw)]) >= 0:
+                            # Inside gridded data → interpolate
+                            predicted_mago = griddata(X, y, [(hw, tw)], method='cubic')
+                            if np.isnan(predicted_mago[0]):
+                                predicted_mago = griddata(X, y, [(hw, tw)], method='linear')
+    
+                            # Clamp numeric values inside min/max GO
+                            if isinstance(predicted_mago[0], (int, float, np.floating)):
+                                if predicted_mago[0] < min_go:
+                                    predicted_mago = np.array([min_go])
+                                elif predicted_mago[0] > max_go:
+                                    predicted_mago = np.array([max_go])
+    
+                        else:
+                            # Outside gridded data → assign < MAGO min/No MAGO
+                            if hw < X[:,0].min() or tw < X[:,1].min():
+                                predicted_mago = np.array([f"<{min_go}"])
+                            else:
+                                predicted_mago = np.array(["No MAGO"])
+    
+                        # Append to results
+                        if isinstance(predicted_mago[0], str):
+                            mago = predicted_mago[0]
+                        else:
+                            mago = round(predicted_mago[0], 1)
+                        results.append({
+                            "Structure": selected_structure,
+                            "HW_NAVD88": hw,
+                            "TW_NAVD88": tw,
+                            "MAGO (ft)": mago
+                        })
+        
+                    # Build new DataFrame
+                    df_output = pd.DataFrame(results)
+        
+                    # Save file name with datetime of selected structure
+                    datetime_val = df_bkpt_data.loc[df_bkpt_data["Structure"] == selected_structure, "Date and Time"].iloc[0]
+                    output_file = f"{selected_structure}_HW_TW_MAGO_{datetime_val}.csv"
+        
+                    # Download button
+                    st.download_button(
+                        label="Download Processed Data",
+                        data=df_output.to_csv(index=False),
+                        file_name=output_file,
+                        mime="text/csv"
+                    )
+                    st.success("Batch processing completed successfully!")
+        
+                else:
+                    st.error("Uploaded CSV must contain 'HW_NAVD88' and 'TW_NAVD88' columns.")
+            except Exception as e:
+                st.error(f"Error processing file: {str(e)}")  
+        
+        
+        # Plot interpolated surface
+        fig, ax = plt.subplots()
+        tw_values = np.linspace(filtered_data["TW_NAVD88"].min(), filtered_data["TW_NAVD88"].max(), 100)
+        hw_values = np.linspace(filtered_data["HW_NAVD88"].min(), filtered_data["HW_NAVD88"].max(), 100)
+        tw_grid, hw_grid = np.meshgrid(tw_values, hw_values)
+        go_grid = griddata(X, y, (hw_grid, tw_grid), method='cubic')
+
+        # Set colorbar range using vmin and vmax
+        levels = np.arange(min_go, max_go + 0.001, 0.2)  # add tiny offset to include max_go        
+        # Create contour plot
+        contour = ax.contourf(tw_grid, hw_grid, go_grid, levels=levels, cmap="viridis", extend='both')
+        cbar = plt.colorbar(contour, ax=ax)
+        cbar.set_label("MAGO feet")  # Label for colorbar
+        ax.set_xlabel("Tailwater Level (TW) feet NAVD88")
+        ax.set_ylabel("Headwater Level (HW) feet NAVD88")
+        ax.set_title(f"Interpolated MAGO Curve for {selected_structure}")
+
+        # Mark user input
+        ax.scatter(tw, hw, color='red', label="User Input")
+        ax.legend()
+
+        st.pyplot(fig)
+        
+        
+    except Exception as e:
+        logging.error(f"This is an error: {e}")
+        raise
+        
+if __name__ == "__main__":
+    main()
+
+
