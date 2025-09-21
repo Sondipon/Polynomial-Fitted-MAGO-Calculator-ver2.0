@@ -10,9 +10,6 @@ from scipy.spatial import Delaunay
 import time as tm
 import subprocess
 from datetime import datetime, timedelta
-
-
-#import win32com.client as client
 import logging
 
 
@@ -239,6 +236,7 @@ def main():
         
 if __name__ == "__main__":
     main()
+
 
 
 
